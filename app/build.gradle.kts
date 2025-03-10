@@ -62,4 +62,6 @@ dependencies {
     implementation (libs.androidx.activity.compose.v182)
     implementation (libs.ui)
     implementation (libs.material3)
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.coil.compose)
 }
