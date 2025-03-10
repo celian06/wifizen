@@ -1,9 +1,7 @@
 package fr.isen.digiovanni.wifizen
 
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
-import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -13,10 +11,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -25,12 +21,11 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 
-// Modèle de données pour un post
+// Modèle de données pour un post (sans vidéo)
 data class Post(
     var uid: String = "",
     var text: String = "",
     var imageUrl: String = "",
-    var videoUrl: String = "",
     var timestamp: Long = 0L
 )
 
@@ -55,6 +50,7 @@ class MainActivity : ComponentActivity() {
                         auth.removeAuthStateListener(listener)
                     }
                 }
+
                 if (currentUser == null) {
                     AuthScreen(auth = auth)
                 } else {
@@ -75,7 +71,9 @@ fun AuthScreen(auth: FirebaseAuth) {
     var loading by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.Center
     ) {
         Text(
@@ -154,7 +152,7 @@ fun AuthScreen(auth: FirebaseAuth) {
     }
 }
 
-// Gère la navigation entre le feed et l'écran de création de post
+// Gère la navigation entre le fil et l'écran de création de post
 @Composable
 fun MainScreen(auth: FirebaseAuth) {
     var currentScreen by remember { mutableStateOf("feed") } // "feed" ou "create"
@@ -171,7 +169,7 @@ fun MainScreen(auth: FirebaseAuth) {
 
 @Composable
 fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
-    // Récupération de la référence à la base de données avec l'URL (note : ajouter le slash final si besoin)
+    // Récupération de la référence à la base de données avec l'URL correcte
     val database = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
     val postsRef = database.getReference("posts")
     var posts by remember { mutableStateOf(listOf<Post>()) }
@@ -216,7 +214,7 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        // Affichage des posts en temps réel
+        // Affichage en temps réel de la liste des posts
         if (posts.isNotEmpty()) {
             LazyColumn {
                 items(posts) { post ->
@@ -227,22 +225,6 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
                                 AsyncImage(
                                     model = post.imageUrl,
                                     contentDescription = "Image du post",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(200.dp)
-                                )
-                            }
-                            if (post.videoUrl.isNotBlank()) {
-                                // Affichage simplifié d'une vidéo via VideoView
-                                val context = LocalContext.current
-                                AndroidView(
-                                    factory = {
-                                        VideoView(context).apply {
-                                            setVideoURI(Uri.parse(post.videoUrl))
-                                            // On peut ajouter des contrôles ou démarrer automatiquement
-                                            setOnPreparedListener { start() }
-                                        }
-                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(200.dp)
@@ -264,10 +246,9 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
 
 @Composable
 fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: () -> Unit) {
-    // Pour la création, on présente trois champs
+    // Pour la création, on présente deux champs : texte et URL d'image
     var text by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
-    var videoUrl by remember { mutableStateOf("") }
     val database = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
     val postsRef = database.getReference("posts")
 
@@ -288,24 +269,17 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = videoUrl,
-            onValueChange = { videoUrl = it },
-            label = { Text("URL de la vidéo") },
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-        )
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
-                // Création d'un nouveau post
-                if (text.isNotBlank() || imageUrl.isNotBlank() || videoUrl.isNotBlank()) {
+                // Log pour vérifier que le bouton est cliqué et afficher les valeurs actuelles des champs
+                Log.d("CreatePostScreen", "Bouton 'Poster' cliqué: text = $text, imageUrl = $imageUrl")
+                // Création d'un nouveau post si au moins un champ est renseigné
+                if (text.isNotBlank() || imageUrl.isNotBlank()) {
                     val post = Post(
                         uid = auth.currentUser?.uid ?: "",
                         text = text,
                         imageUrl = imageUrl,
-                        videoUrl = videoUrl,
                         timestamp = System.currentTimeMillis()
                     )
                     postsRef.push().setValue(post)
@@ -316,6 +290,8 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
                         .addOnFailureListener { e ->
                             Log.e("CreatePostScreen", "Erreur lors de la création du post", e)
                         }
+                } else {
+                    Log.d("CreatePostScreen", "Les champs sont vides, aucun post n'est créé.")
                 }
             }) {
                 Text("Poster")
@@ -325,8 +301,5 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        // Astuce : Firebase Realtime Database est conçu pour des données légères.
-        // Chaque opération d'écriture a une limite théorique de 256 Mo, mais il est recommandé
-        // de ne pas dépasser quelques centaines de Ko par écritures.
     }
 }
