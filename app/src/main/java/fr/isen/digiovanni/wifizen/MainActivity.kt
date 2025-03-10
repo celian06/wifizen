@@ -7,12 +7,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
@@ -20,6 +23,7 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
+import androidx.compose.foundation.layout.imePadding
 
 // Modèle de données pour un post (sans vidéo)
 data class Post(
@@ -46,11 +50,8 @@ class MainActivity : ComponentActivity() {
                         currentUser = firebaseAuth.currentUser
                     }
                     auth.addAuthStateListener(listener)
-                    onDispose {
-                        auth.removeAuthStateListener(listener)
-                    }
+                    onDispose { auth.removeAuthStateListener(listener) }
                 }
-
                 if (currentUser == null) {
                     AuthScreen(auth = auth)
                 } else {
@@ -70,10 +71,13 @@ fun AuthScreen(auth: FirebaseAuth) {
     var errorMessage by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
 
+    // Utilisation de imePadding() pour que le contenu se décale au-dessus du clavier
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(16.dp)
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.Center
     ) {
         Text(
@@ -114,8 +118,8 @@ fun AuthScreen(auth: FirebaseAuth) {
                             if (task.isSuccessful) {
                                 Log.d("Auth", "Connexion réussie")
                             } else {
-                                errorMessage =
-                                    task.exception?.localizedMessage ?: "Erreur lors de la connexion"
+                                errorMessage = task.exception?.localizedMessage
+                                    ?: "Erreur lors de la connexion"
                             }
                         }
                 } else {
@@ -125,8 +129,8 @@ fun AuthScreen(auth: FirebaseAuth) {
                             if (task.isSuccessful) {
                                 Log.d("Auth", "Inscription réussie")
                             } else {
-                                errorMessage =
-                                    task.exception?.localizedMessage ?: "Erreur lors de l'inscription"
+                                errorMessage = task.exception?.localizedMessage
+                                    ?: "Erreur lors de l'inscription"
                             }
                         }
                 }
@@ -169,23 +173,25 @@ fun MainScreen(auth: FirebaseAuth) {
 
 @Composable
 fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
-    // Récupération de la référence à la base de données avec l'URL correcte
+    // Utilisation de l'URL unifiée
     val database = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
     val postsRef = database.getReference("posts")
-    var posts by remember { mutableStateOf(listOf<Post>()) }
+    // Stocke chaque post avec sa clé (Pair(key, Post))
+    var posts by remember { mutableStateOf(listOf<Pair<String, Post>>()) }
 
     // Écoute en temps réel des posts
     DisposableEffect(postsRef) {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val newPosts = mutableListOf<Post>()
+                val newPosts = mutableListOf<Pair<String, Post>>()
                 for (postSnapshot in snapshot.children) {
                     val post = postSnapshot.getValue(Post::class.java)
-                    if (post != null) {
-                        newPosts.add(post)
+                    val key = postSnapshot.key
+                    if (post != null && key != null) {
+                        newPosts.add(key to post)
                     }
                 }
-                newPosts.sortByDescending { it.timestamp }
+                newPosts.sortByDescending { it.second.timestamp }
                 posts = newPosts
             }
             override fun onCancelled(error: DatabaseError) {
@@ -217,7 +223,7 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
         // Affichage en temps réel de la liste des posts
         if (posts.isNotEmpty()) {
             LazyColumn {
-                items(posts) { post ->
+                items(posts) { (key, post) ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text(text = post.text, style = MaterialTheme.typography.bodyLarge)
@@ -232,8 +238,27 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
                             }
                             Text(
                                 text = "Posté par : ${post.uid}",
-                                style = MaterialTheme.typography.labelSmall
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 12.sp
                             )
+                            // Affiche le bouton de suppression uniquement pour le post de l'utilisateur courant
+                            if (post.uid == auth.currentUser?.uid) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Button(
+                                    onClick = {
+                                        postsRef.child(key).removeValue()
+                                            .addOnSuccessListener {
+                                                Log.d("FeedScreen", "Post supprimé avec succès")
+                                            }
+                                            .addOnFailureListener { e ->
+                                                Log.e("FeedScreen", "Erreur lors de la suppression du post", e)
+                                            }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text(text = "Supprimer", color = MaterialTheme.colorScheme.onError)
+                                }
+                            }
                         }
                     }
                 }
@@ -272,9 +297,7 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
-                // Log pour vérifier que le bouton est cliqué et afficher les valeurs actuelles des champs
                 Log.d("CreatePostScreen", "Bouton 'Poster' cliqué: text = $text, imageUrl = $imageUrl")
-                // Création d'un nouveau post si au moins un champ est renseigné
                 if (text.isNotBlank() || imageUrl.isNotBlank()) {
                     val post = Post(
                         uid = auth.currentUser?.uid ?: "",
