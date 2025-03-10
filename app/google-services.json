@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "41896067857",
+    "project_id": "wifizen-b7b58",
+    "storage_bucket": "wifizen-b7b58.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:41896067857:android:207a011076e10217e782b0",
+        "android_client_info": {
+          "package_name": "fr.isen.digiovanni.wifizen"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAG-KDwYCGkJVCfBvqiQNEJs1pAQnwPjo4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
