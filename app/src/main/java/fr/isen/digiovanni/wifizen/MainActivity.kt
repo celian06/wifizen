@@ -322,7 +322,8 @@ fun FeedScreen(
         if (posts.isNotEmpty()) {
             LazyColumn {
                 items(posts) { (key, post) ->
-                    var showDialog by remember { mutableStateOf(false) }
+                    var showCommentDialog by remember { mutableStateOf(false) }
+                    var showEditPostDialog by remember { mutableStateOf(false) }
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             // Affichage de l'avatar et du pseudo
@@ -362,15 +363,21 @@ fun FeedScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             if (post.uid == auth.currentUser?.uid) {
-                                Button(
-                                    onClick = {
-                                        postsRef.child(key).removeValue()
-                                            .addOnSuccessListener { Log.d("FeedScreen", "Post supprimé") }
-                                            .addOnFailureListener { e -> Log.e("FeedScreen", "Erreur de suppression", e) }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Text("Supprimer", color = MaterialTheme.colorScheme.onError)
+                                Row {
+                                    Button(onClick = { showEditPostDialog = true }) {
+                                        Text("Editer")
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = {
+                                            postsRef.child(key).removeValue()
+                                                .addOnSuccessListener { Log.d("FeedScreen", "Post supprimé") }
+                                                .addOnFailureListener { e -> Log.e("FeedScreen", "Erreur de suppression", e) }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Text("Supprimer", color = MaterialTheme.colorScheme.onError)
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -390,26 +397,58 @@ fun FeedScreen(
                                 }) {
                                     Text("❤️ $likeCount")
                                 }
-                                Button(onClick = { showDialog = true }) {
+                                Button(onClick = { showCommentDialog = true }) {
                                     Text("💬 Commenter")
                                 }
                             }
+                            // Affichage des commentaires
                             if (post.comments.isNotEmpty()) {
                                 Column(modifier = Modifier.padding(top = 8.dp)) {
                                     Text("Commentaires :", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                    post.comments.values.forEach { comment ->
-                                        Text("- ${comment.pseudo}: ${comment.text}", style = MaterialTheme.typography.bodySmall)
+                                    post.comments.forEach { (commentKey, comment) ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("- ${comment.pseudo}: ${comment.text}", style = MaterialTheme.typography.bodySmall)
+                                            if (comment.uid == auth.currentUser?.uid) {
+                                                var showEditCommentDialog by remember { mutableStateOf(false) }
+                                                Button(onClick = { showEditCommentDialog = true }) {
+                                                    Text("Editer")
+                                                }
+                                                Button(onClick = {
+                                                    postsRef.child(key).child("comments").child(commentKey).removeValue()
+                                                }) {
+                                                    Text("Supprimer")
+                                                }
+                                                if (showEditCommentDialog) {
+                                                    EditCommentDialog(
+                                                        postsRef = postsRef,
+                                                        postId = key,
+                                                        commentId = commentKey,
+                                                        currentText = comment.text,
+                                                        onDismiss = { showEditCommentDialog = false }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                    if (showDialog) {
+                    if (showEditPostDialog) {
+                        EditPostDialog(
+                            postsRef = postsRef,
+                            postId = key,
+                            currentText = post.text,
+                            currentImageUrl = post.imageUrl,
+                            onDismiss = { showEditPostDialog = false }
+                        )
+                    }
+                    if (showCommentDialog) {
                         ShowCommentDialog(
                             postsRef = postsRef,
                             postId = key,
-                            currentUserPseudo = currentUserPseudo, // Le pseudo de l'utilisateur connecté
-                            onDismiss = { showDialog = false }
+                            currentUserPseudo = currentUserPseudo,
+                            onDismiss = { showCommentDialog = false }
                         )
                     }
                 }
@@ -537,6 +576,93 @@ fun ShowCommentDialog(
                 }
             }) {
                 Text("Poster")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditPostDialog(
+    postsRef: DatabaseReference,
+    postId: String,
+    currentText: String,
+    currentImageUrl: String,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(currentText) }
+    var imageUrl by remember { mutableStateOf(currentImageUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Modifier le post") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Texte") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = imageUrl,
+                    onValueChange = { imageUrl = it },
+                    label = { Text("URL de l'image") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val updates = mapOf("text" to text, "imageUrl" to imageUrl)
+                postsRef.child(postId).updateChildren(updates)
+                    .addOnSuccessListener { onDismiss() }
+                    .addOnFailureListener { /* gérer l'erreur si besoin */ }
+            }) {
+                Text("Enregistrer")
+            }
+        },
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text("Annuler")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditCommentDialog(
+    postsRef: DatabaseReference,
+    postId: String,
+    commentId: String,
+    currentText: String,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(currentText) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Modifier le commentaire") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Commentaire") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                val updates = mapOf("text" to text)
+                postsRef.child(postId).child("comments").child(commentId).updateChildren(updates)
+                    .addOnSuccessListener { onDismiss() }
+                    .addOnFailureListener { /* gérer l'erreur si besoin */ }
+            }) {
+                Text("Enregistrer")
             }
         },
         dismissButton = {
