@@ -408,7 +408,7 @@ fun FeedScreen(
                         ShowCommentDialog(
                             postsRef = postsRef,
                             postId = key,
-                            currentUserPseudo = post.pseudo,
+                            currentUserPseudo = currentUserPseudo, // Le pseudo de l'utilisateur connecté
                             onDismiss = { showDialog = false }
                         )
                     }
