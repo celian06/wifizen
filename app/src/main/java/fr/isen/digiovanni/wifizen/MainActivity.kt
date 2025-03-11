@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -348,7 +349,11 @@ fun FeedScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(text = post.text, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = post.text,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             if (post.imageUrl.isNotBlank()) {
                                 AsyncImage(
                                     model = ImageRequest.Builder(LocalContext.current)
@@ -406,17 +411,31 @@ fun FeedScreen(
                                 Column(modifier = Modifier.padding(top = 8.dp)) {
                                     Text("Commentaires :", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                                     post.comments.forEach { (commentKey, comment) ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("- ${comment.pseudo}: ${comment.text}", style = MaterialTheme.typography.bodySmall)
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "- ${comment.pseudo}: ${comment.text}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
                                             if (comment.uid == auth.currentUser?.uid) {
                                                 var showEditCommentDialog by remember { mutableStateOf(false) }
-                                                Button(onClick = { showEditCommentDialog = true }) {
-                                                    Text("Editer")
-                                                }
-                                                Button(onClick = {
-                                                    postsRef.child(key).child("comments").child(commentKey).removeValue()
-                                                }) {
-                                                    Text("Supprimer")
+                                                Row(modifier = Modifier.padding(top = 4.dp)) {
+                                                    Button(onClick = { showEditCommentDialog = true }) {
+                                                        Text("Editer")
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Button(
+                                                        onClick = {
+                                                            postsRef.child(key).child("comments").child(commentKey).removeValue()
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                                    ) {
+                                                        Text("Supprimer", color = MaterialTheme.colorScheme.onError)
+                                                    }
                                                 }
                                                 if (showEditCommentDialog) {
                                                     EditCommentDialog(
