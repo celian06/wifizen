@@ -1,5 +1,6 @@
 package fr.isen.digiovanni.wifizen
 
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -15,24 +16,35 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 
-// Modèle de données pour un post (sans vidéo)
+// Data class pour un commentaire (incluant le pseudo du commentateur)
+data class Comment(
+    var uid: String = "",
+    var pseudo: String = "",
+    var text: String = "",
+    var timestamp: Long = 0L
+)
+
+// Data class pour un post, incluant le pseudo, les likes (sous forme d'une Map de uid) et les commentaires
 data class Post(
     var uid: String = "",
+    var pseudo: String = "",
     var text: String = "",
     var imageUrl: String = "",
-    var timestamp: Long = 0L
+    var timestamp: Long = 0L,
+    var likes: Map<String, Boolean> = emptyMap(),
+    var comments: Map<String, Comment> = emptyMap()
 )
 
 class MainActivity : ComponentActivity() {
@@ -45,8 +57,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme {
-                // Suivi de l'état de connexion de l'utilisateur
+                // Suivi de l'état de connexion
                 var currentUser by remember { mutableStateOf(auth.currentUser) }
+                // Stockage du pseudo de l'utilisateur connecté
+                var currentUserPseudo by remember { mutableStateOf("") }
+
+                // Listener d'authentification
                 DisposableEffect(auth) {
                     val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
                         currentUser = firebaseAuth.currentUser
@@ -54,11 +70,27 @@ class MainActivity : ComponentActivity() {
                     auth.addAuthStateListener(listener)
                     onDispose { auth.removeAuthStateListener(listener) }
                 }
+
+                // Chargement du pseudo depuis Firebase si l'utilisateur est connecté
+                LaunchedEffect(currentUser) {
+                    currentUser?.uid?.let { uid ->
+                        val userRef = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
+                            .getReference("users").child(uid)
+                        userRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(snapshot: DataSnapshot) {
+                                currentUserPseudo = snapshot.child("pseudo").getValue(String::class.java) ?: ""
+                            }
+                            override fun onCancelled(error: DatabaseError) {
+                                Log.e("MainActivity", "Erreur lors du chargement du pseudo", error.toException())
+                            }
+                        })
+                    }
+                }
+
                 if (currentUser == null) {
                     AuthScreen(auth = auth)
                 } else {
-                    // MainScreen gère la navigation entre le fil et l'écran de création de post
-                    MainScreen(auth = auth)
+                    MainScreen(auth = auth, currentUserPseudo = currentUserPseudo)
                 }
             }
         }
@@ -69,11 +101,11 @@ class MainActivity : ComponentActivity() {
 fun AuthScreen(auth: FirebaseAuth) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var pseudo by remember { mutableStateOf("") } // Champ pour le pseudo lors de l'inscription
     var authMode by remember { mutableStateOf("login") } // "login" ou "signup"
     var errorMessage by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
 
-    // Utilisation de imePadding() et verticalScroll pour éviter que le clavier cache le contenu
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -87,6 +119,16 @@ fun AuthScreen(auth: FirebaseAuth) {
             style = MaterialTheme.typography.titleLarge
         )
         Spacer(modifier = Modifier.height(16.dp))
+        if (authMode == "signup") {
+            OutlinedTextField(
+                value = pseudo,
+                onValueChange = { pseudo = it },
+                label = { Text("Pseudo") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -101,6 +143,7 @@ fun AuthScreen(auth: FirebaseAuth) {
             onValueChange = { password = it },
             label = { Text("Mot de passe") },
             singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), // Masque le mot de passe
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
         )
@@ -120,8 +163,7 @@ fun AuthScreen(auth: FirebaseAuth) {
                             if (task.isSuccessful) {
                                 Log.d("Auth", "Connexion réussie")
                             } else {
-                                errorMessage = task.exception?.localizedMessage
-                                    ?: "Erreur lors de la connexion"
+                                errorMessage = task.exception?.localizedMessage ?: "Erreur lors de la connexion"
                             }
                         }
                 } else {
@@ -129,10 +171,19 @@ fun AuthScreen(auth: FirebaseAuth) {
                         .addOnCompleteListener { task ->
                             loading = false
                             if (task.isSuccessful) {
-                                Log.d("Auth", "Inscription réussie")
+                                // Sauvegarde du pseudo dans la base de données
+                                val uid = auth.currentUser?.uid ?: return@addOnCompleteListener
+                                val userMap = mapOf("uid" to uid, "pseudo" to pseudo)
+                                val database = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
+                                database.getReference("users").child(uid).setValue(userMap)
+                                    .addOnSuccessListener {
+                                        Log.d("Auth", "Inscription et sauvegarde du pseudo réussies")
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("Auth", "Erreur lors de la sauvegarde du pseudo", e)
+                                    }
                             } else {
-                                errorMessage = task.exception?.localizedMessage
-                                    ?: "Erreur lors de l'inscription"
+                                errorMessage = task.exception?.localizedMessage ?: "Erreur lors de l'inscription"
                             }
                         }
                 }
@@ -158,15 +209,16 @@ fun AuthScreen(auth: FirebaseAuth) {
     }
 }
 
-// Gère la navigation entre le fil et l'écran de création de post
 @Composable
-fun MainScreen(auth: FirebaseAuth) {
+fun MainScreen(auth: FirebaseAuth, currentUserPseudo: String) {
     var currentScreen by remember { mutableStateOf("feed") } // "feed" ou "create"
     if (currentScreen == "feed") {
-        FeedScreen(auth = auth, onCreatePost = { currentScreen = "create" })
+        // On transmet également le pseudo de l'utilisateur courant à FeedScreen
+        FeedScreen(auth = auth, currentUserPseudo = currentUserPseudo, onCreatePost = { currentScreen = "create" })
     } else {
         CreatePostScreen(
             auth = auth,
+            currentUserPseudo = currentUserPseudo,
             onPostCreated = { currentScreen = "feed" },
             onCancel = { currentScreen = "feed" }
         )
@@ -174,14 +226,11 @@ fun MainScreen(auth: FirebaseAuth) {
 }
 
 @Composable
-fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
-    // URL unifiée pour accéder à Firebase Realtime Database
+fun FeedScreen(auth: FirebaseAuth, currentUserPseudo: String, onCreatePost: () -> Unit) {
     val database = Firebase.database("https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/")
     val postsRef = database.getReference("posts")
-    // Stocke chaque post avec sa clé (Pair(key, Post))
     var posts by remember { mutableStateOf(listOf<Pair<String, Post>>()) }
 
-    // Écoute en temps réel des posts
     DisposableEffect(postsRef) {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -205,7 +254,6 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        // En-tête avec titre, bouton Sign Out et bouton pour créer un nouveau post
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -222,20 +270,19 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        // Affichage en temps réel de la liste des posts avec LazyColumn pour charger uniquement les posts visibles
         if (posts.isNotEmpty()) {
             LazyColumn {
                 items(posts) { (key, post) ->
+                    var showDialog by remember { mutableStateOf(false) }
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text(text = post.text, style = MaterialTheme.typography.bodyLarge)
                             if (post.imageUrl.isNotBlank()) {
-                                // Utilisation d'une requête Coil pour redimensionner l'image à 600x400 pixels maximum
                                 val context = LocalContext.current
                                 AsyncImage(
                                     model = ImageRequest.Builder(context)
                                         .data(post.imageUrl)
-                                        .size(600, 400) // Limite la taille de l'image chargée
+                                        .size(600, 400)
                                         .build(),
                                     contentDescription = "Image du post",
                                     modifier = Modifier
@@ -244,11 +291,11 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
                                 )
                             }
                             Text(
-                                text = "Posté par : ${post.uid}",
+                                text = "Posté par : ${if (post.pseudo.isNotBlank()) post.pseudo else post.uid}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 12.sp
                             )
-                            // Bouton de suppression pour le post de l'utilisateur courant
+                            // Bouton de suppression (affiché si le post appartient à l'utilisateur courant)
                             if (post.uid == auth.currentUser?.uid) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Button(
@@ -266,7 +313,48 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
                                     Text(text = "Supprimer", color = MaterialTheme.colorScheme.onError)
                                 }
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // Gestion du like : on stocke les likes dans une Map<String, Boolean>
+                            val currentUid = auth.currentUser?.uid ?: ""
+                            val userLiked = post.likes.containsKey(currentUid)
+                            val likeCount = post.likes.size
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Button(onClick = {
+                                    val newLikes = post.likes.toMutableMap()
+                                    if (userLiked) {
+                                        newLikes.remove(currentUid)
+                                    } else {
+                                        newLikes[currentUid] = true
+                                    }
+                                    postsRef.child(key).child("likes").setValue(newLikes)
+                                }) {
+                                    Text("❤️ $likeCount")
+                                }
+                                Button(onClick = { showDialog = true }) {
+                                    Text("💬 Commenter")
+                                }
+                            }
+                            // Affichage des commentaires avec pseudo
+                            if (post.comments.isNotEmpty()) {
+                                Column(modifier = Modifier.padding(top = 8.dp)) {
+                                    Text("Commentaires :", fontWeight = FontWeight.Bold)
+                                    post.comments.values.forEach { comment ->
+                                        Text("- ${comment.pseudo}: ${comment.text}", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
                         }
+                    }
+                    if (showDialog) {
+                        ShowCommentDialog(
+                            postsRef = postsRef,
+                            postId = key,
+                            currentUserPseudo = currentUserPseudo,
+                            onDismiss = { showDialog = false }
+                        )
                     }
                 }
             }
@@ -277,8 +365,12 @@ fun FeedScreen(auth: FirebaseAuth, onCreatePost: () -> Unit) {
 }
 
 @Composable
-fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: () -> Unit) {
-    // Pour la création, on présente deux champs : texte et URL d'image
+fun CreatePostScreen(
+    auth: FirebaseAuth,
+    currentUserPseudo: String,
+    onPostCreated: () -> Unit,
+    onCancel: () -> Unit
+) {
     var text by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
@@ -311,11 +403,9 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
         Spacer(modifier = Modifier.height(16.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
-                Log.d("CreatePostScreen", "Bouton 'Poster' cliqué: text = $text, imageUrl = $imageUrl")
-                // Validation de l'URL (vérifie qu'elle commence par http ou https)
                 fun isValidUrl(url: String): Boolean {
                     return try {
-                        val uri = android.net.Uri.parse(url)
+                        val uri = Uri.parse(url)
                         (uri.scheme == "http" || uri.scheme == "https") && uri.host != null
                     } catch (e: Exception) {
                         false
@@ -328,6 +418,7 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
                 if (text.isNotBlank() || imageUrl.isNotBlank()) {
                     val post = Post(
                         uid = auth.currentUser?.uid ?: "",
+                        pseudo = currentUserPseudo,
                         text = text,
                         imageUrl = imageUrl,
                         timestamp = System.currentTimeMillis()
@@ -352,4 +443,48 @@ fun CreatePostScreen(auth: FirebaseAuth, onPostCreated: () -> Unit, onCancel: ()
         }
         Spacer(modifier = Modifier.height(8.dp))
     }
+}
+
+@Composable
+fun ShowCommentDialog(
+    postsRef: DatabaseReference,
+    postId: String,
+    currentUserPseudo: String,
+    onDismiss: () -> Unit
+) {
+    var commentText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = { onDismiss() },
+        title = { Text("Ajouter un commentaire") },
+        text = {
+            OutlinedTextField(
+                value = commentText,
+                onValueChange = { commentText = it },
+                label = { Text("Votre commentaire") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (commentText.isNotBlank()) {
+                    val comment = Comment(
+                        uid = FirebaseAuth.getInstance().currentUser?.uid ?: "",
+                        pseudo = currentUserPseudo,
+                        text = commentText,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    postsRef.child(postId).child("comments").push().setValue(comment)
+                    onDismiss()
+                }
+            }) {
+                Text("Poster")
+            }
+        },
+        dismissButton = {
+            Button(onClick = { onDismiss() }) {
+                Text("Annuler")
+            }
+        }
+    )
 }
