@@ -609,14 +609,32 @@ fun ProfileScreen(
                     postsRef.orderByChild("uid").equalTo(currentUserUid)
                         .addListenerForSingleValueEvent(object : ValueEventListener {
                             override fun onDataChange(snapshot: DataSnapshot) {
-                                Log.d("ProfileScreen", "Nombre de posts à mettre à jour : ${snapshot.childrenCount}")
                                 for (postSnapshot in snapshot.children) {
                                     postSnapshot.ref.updateChildren(
                                         mapOf("pseudo" to pseudo, "profileImageUrl" to profileImageUrl)
                                     )
                                 }
-                                updateMessage = "Profil mis à jour"
-                                onProfileUpdated(pseudo, profileImageUrl)
+                                // Mise à jour rétroactive des commentaires de l'utilisateur dans tous les posts
+                                postsRef.addListenerForSingleValueEvent(object : ValueEventListener {
+                                    override fun onDataChange(snapshot: DataSnapshot) {
+                                        for (postSnapshot in snapshot.children) {
+                                            val commentsSnapshot = postSnapshot.child("comments")
+                                            for (commentSnapshot in commentsSnapshot.children) {
+                                                val commentUid = commentSnapshot.child("uid").getValue(String::class.java)
+                                                if (commentUid == currentUserUid) {
+                                                    commentSnapshot.ref.updateChildren(
+                                                        mapOf("pseudo" to pseudo)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        updateMessage = "Profil mis à jour"
+                                        onProfileUpdated(pseudo, profileImageUrl)
+                                    }
+                                    override fun onCancelled(error: DatabaseError) {
+                                        updateMessage = "Erreur lors de la mise à jour des commentaires"
+                                    }
+                                })
                             }
                             override fun onCancelled(error: DatabaseError) {
                                 updateMessage = "Erreur lors de la mise à jour des posts"
