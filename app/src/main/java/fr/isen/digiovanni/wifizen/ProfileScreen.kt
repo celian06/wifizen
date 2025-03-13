@@ -18,6 +18,7 @@ import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.ui.Alignment
 
 @Composable
 fun ProfileScreen(
@@ -31,11 +32,40 @@ fun ProfileScreen(
     var profileImageUrl by remember { mutableStateOf(currentProfileImageUrl) }
     var updateMessage by remember { mutableStateOf("") }
 
+    // Variables pour les statistiques
+    var postCount by remember { mutableStateOf(0) }
+    var commentCount by remember { mutableStateOf(0) }
+    var likeCount by remember { mutableStateOf(0) }
+
     val database = Firebase.database(
         "https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/"
     )
     val userRef = database.getReference("users").child(currentUserUid)
     val postsRef = database.getReference("posts")
+
+    // Récupérer les statistiques de l'utilisateur
+    LaunchedEffect(currentUserUid) {
+        postsRef.orderByChild("uid").equalTo(currentUserUid)
+            .addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    var postCounter = 0
+                    var commentCounter = 0
+                    var likeCounter = 0
+                    for (postSnapshot in snapshot.children) {
+                        postCounter++
+                        val commentsSnapshot = postSnapshot.child("comments")
+                        commentCounter += commentsSnapshot.childrenCount.toInt()
+                        likeCounter += postSnapshot.child("likes").childrenCount.toInt()
+                    }
+                    postCount = postCounter
+                    commentCount = commentCounter
+                    likeCount = likeCounter
+                }
+                override fun onCancelled(error: DatabaseError) {
+                    // Gérer l'erreur si nécessaire
+                }
+            })
+    }
 
     Column(
         modifier = Modifier
@@ -45,17 +75,38 @@ fun ProfileScreen(
     ) {
         Text("Mon Profil", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
-        if (profileImageUrl.isNotBlank()) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(profileImageUrl)
-                    .build(),
-                contentDescription = "Photo de profil",
-                modifier = Modifier
-                    .size(100.dp)
-                    .clip(CircleShape)
-            )
+
+        // Box pour centrer la photo de profil
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (profileImageUrl.isNotBlank()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(profileImageUrl)
+                        .build(),
+                    contentDescription = "Photo de profil",
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                )
+            }
         }
+
+        // Barre de statistiques sous la photo de profil
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            StatItem(label = "Posts", count = postCount, modifier = Modifier.weight(1f))
+            StatItem(label = "Commentaires", count = commentCount, modifier = Modifier.weight(1f))
+            StatItem(label = "Likes", count = likeCount, modifier = Modifier.weight(1f))
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(
             value = pseudo,
@@ -134,5 +185,17 @@ fun ProfileScreen(
                 Text("Retour")
             }
         }
+    }
+}
+
+@Composable
+fun StatItem(label: String, count: Int, modifier: Modifier = Modifier) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(text = label, style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = count.toString(), style = MaterialTheme.typography.bodyMedium)
     }
 }
