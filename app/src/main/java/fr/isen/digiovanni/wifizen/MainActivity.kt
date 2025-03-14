@@ -72,12 +72,14 @@ class MainActivity : ComponentActivity() {
                             auth = auth,
                             onAuthSuccess = { currentScreen = "feed" }
                         )
+
                         "feed" -> FeedScreen(
                             auth = auth,
                             currentUserPseudo = currentUserPseudo,
                             onCreatePost = { currentScreen = "create" },
                             onProfileClick = { currentScreen = "profile" }
                         )
+
                         "create" -> CreatePostScreen(
                             auth = auth,
                             currentUserPseudo = currentUserPseudo,
@@ -85,6 +87,7 @@ class MainActivity : ComponentActivity() {
                             onPostCreated = { currentScreen = "feed" },
                             onCancel = { currentScreen = "feed" }
                         )
+
                         "profile" -> ProfileScreen(
                             currentUserUid = auth.currentUser?.uid ?: "",
                             currentPseudo = currentUserPseudo,

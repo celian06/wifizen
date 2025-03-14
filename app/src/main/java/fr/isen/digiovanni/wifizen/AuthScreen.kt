@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,6 +29,8 @@ fun AuthScreen(auth: FirebaseAuth, onAuthSuccess: () -> Unit) {
     var authMode by remember { mutableStateOf("login") } // "login" ou "signup"
     var errorMessage by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    // État pour afficher le message de réinitialisation du mot de passe
+    var resetMessage by remember { mutableStateOf("") }
 
     // Détection fiable du clavier
     val view = LocalView.current
@@ -49,7 +50,6 @@ fun AuthScreen(auth: FirebaseAuth, onAuthSuccess: () -> Unit) {
         verticalArrangement = if (isKeyboardOpen) Arrangement.Top else Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Ici, on ajuste l'offset à 20.dp au lieu de 50.dp pour un décalage moindre
         Spacer(modifier = Modifier.height(if (isKeyboardOpen) 20.dp else 0.dp))
 
         Image(
@@ -115,41 +115,39 @@ fun AuthScreen(auth: FirebaseAuth, onAuthSuccess: () -> Unit) {
             onClick = {
                 loading = true
                 errorMessage = ""
-                if (authMode == "login") {
+                resetMessage = ""
+                val authTask = if (authMode == "login") {
                     auth.signInWithEmailAndPassword(email, password)
-                        .addOnCompleteListener { task ->
-                            loading = false
-                            if (task.isSuccessful) {
-                                onAuthSuccess()
-                            } else {
-                                errorMessage = task.exception?.localizedMessage
-                                    ?: "Erreur lors de la connexion"
-                            }
-                        }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
-                        .addOnCompleteListener { task ->
-                            loading = false
-                            if (task.isSuccessful) {
-                                val uid = auth.currentUser?.uid ?: return@addOnCompleteListener
-                                val userMap = mapOf(
-                                    "uid" to uid,
-                                    "pseudo" to pseudo,
-                                    "profileImageUrl" to profileImageUrl
-                                )
-                                val database = Firebase.database(
-                                    "https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/"
-                                )
-                                database.getReference("users").child(uid).setValue(userMap)
-                                    .addOnSuccessListener { onAuthSuccess() }
-                                    .addOnFailureListener { e ->
-                                        errorMessage = e.localizedMessage ?: "Erreur lors de la sauvegarde"
-                                    }
-                            } else {
-                                errorMessage = task.exception?.localizedMessage
-                                    ?: "Erreur lors de l'inscription"
-                            }
+                }
+                authTask.addOnCompleteListener { task ->
+                    loading = false
+                    // Lève l'assignation du message d'erreur en dehors du if principal
+                    errorMessage = if (task.isSuccessful) "" else {
+                        task.exception?.localizedMessage
+                            ?: if (authMode == "login") "Erreur lors de la connexion" else "Erreur lors de l'inscription"
+                    }
+                    if (task.isSuccessful) {
+                        if (authMode == "signup") {
+                            val uid = auth.currentUser?.uid ?: return@addOnCompleteListener
+                            val userMap = mapOf(
+                                "uid" to uid,
+                                "pseudo" to pseudo,
+                                "profileImageUrl" to profileImageUrl
+                            )
+                            val database = Firebase.database(
+                                "https://wifizen-b7b58-default-rtdb.europe-west1.firebasedatabase.app/"
+                            )
+                            database.getReference("users").child(uid).setValue(userMap)
+                                .addOnSuccessListener { onAuthSuccess() }
+                                .addOnFailureListener { e ->
+                                    errorMessage = e.localizedMessage ?: "Erreur lors de la sauvegarde"
+                                }
+                        } else {
+                            onAuthSuccess()
                         }
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -157,12 +155,43 @@ fun AuthScreen(auth: FirebaseAuth, onAuthSuccess: () -> Unit) {
             Text(text = if (authMode == "login") "Se connecter" else "S'inscrire")
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        // Bouton "Mot de passe oublié ?" uniquement en mode connexion
+        if (authMode == "login") {
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                onClick = {
+                    resetMessage = ""
+                    if (email.isNotBlank()) {
+                        auth.sendPasswordResetEmail(email)
+                            .addOnCompleteListener { task ->
+                                resetMessage = if (task.isSuccessful) {
+                                    "Un email de réinitialisation a été envoyé"
+                                } else {
+                                    task.exception?.localizedMessage
+                                        ?: "Erreur lors de l'envoi de l'email"
+                                }
+                            }
+                    } else {
+                        resetMessage = "Veuillez saisir votre email pour réinitialiser le mot de passe"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Mot de passe oublié ?")
+            }
+            if (resetMessage.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = resetMessage, color = MaterialTheme.colorScheme.primary)
+            }
+        }
 
+        Spacer(modifier = Modifier.height(8.dp))
+        // Bouton pour basculer entre connexion et inscription
         TextButton(
             onClick = {
                 authMode = if (authMode == "login") "signup" else "login"
                 errorMessage = ""
+                resetMessage = ""
             },
             modifier = Modifier.fillMaxWidth()
         ) {
