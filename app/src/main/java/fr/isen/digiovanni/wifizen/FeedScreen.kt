@@ -155,6 +155,7 @@ fun FeedScreen(
                             val currentUid = auth.currentUser?.uid ?: ""
                             val userLiked = post.likes.containsKey(currentUid)
                             val likeCount = post.likes.size
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -180,11 +181,75 @@ fun FeedScreen(
                                                 .fillMaxWidth()
                                                 .padding(vertical = 4.dp)
                                         ) {
+
                                             Text(
                                                 text = "- ${comment.pseudo}: ${comment.text}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 modifier = Modifier.fillMaxWidth()
                                             )
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.Start
+                                            ) {
+                                                val currentUid = auth.currentUser?.uid ?: ""
+                                                val userLiked = comment.likes.containsKey(currentUid)
+                                                val userDisliked = comment.dislikes.containsKey(currentUid)
+
+                                                val likeCount = comment.likes.size
+                                                val dislikeCount = comment.dislikes.size
+
+                                                // Bouton 👍
+                                                Button(onClick = {
+                                                    val newLikes = comment.likes.toMutableMap()
+                                                    val newDislikes = comment.dislikes.toMutableMap()
+
+                                                    if (userLiked) {
+                                                        newLikes.remove(currentUid)  // Annuler le like
+                                                    } else {
+                                                        newLikes[currentUid] = true  // Ajouter le like
+                                                        newDislikes.remove(currentUid)  // Retirer le dislike s'il existe
+                                                    }
+
+                                                    // Met à jour la base de données
+                                                    postsRef.child(key)
+                                                        .child("comments")
+                                                        .child(commentKey)
+                                                        .updateChildren(mapOf(
+                                                            "likes" to newLikes,
+                                                            "dislikes" to newDislikes
+                                                        ))
+                                                }) {
+                                                    Text(if (userLiked) "👍 $likeCount" else "👍 $likeCount")
+                                                }
+
+                                                Spacer(modifier = Modifier.width(8.dp))
+
+                                                // Bouton 👎
+                                                Button(onClick = {
+                                                    val newLikes = comment.likes.toMutableMap()
+                                                    val newDislikes = comment.dislikes.toMutableMap()
+
+                                                    if (userDisliked) {
+                                                        newDislikes.remove(currentUid)  // Annuler le dislike
+                                                    } else {
+                                                        newDislikes[currentUid] = true  // Ajouter le dislike
+                                                        newLikes.remove(currentUid)  // Retirer le like s'il existe
+                                                    }
+
+                                                    // Met à jour la base de données
+                                                    postsRef.child(key)
+                                                        .child("comments")
+                                                        .child(commentKey)
+                                                        .updateChildren(mapOf(
+                                                            "likes" to newLikes,
+                                                            "dislikes" to newDislikes
+                                                        ))
+                                                }) {
+                                                    Text(if (userDisliked) "👎 $dislikeCount" else "👎 $dislikeCount")
+                                                }
+                                            }
+
                                             if (comment.uid == auth.currentUser?.uid) {
                                                 var showEditCommentDialog by remember { mutableStateOf(false) }
                                                 Row(modifier = Modifier.padding(top = 4.dp)) {
