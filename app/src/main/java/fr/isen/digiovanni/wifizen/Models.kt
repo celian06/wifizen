@@ -5,7 +5,9 @@ data class Comment(
     var uid: String = "",
     var pseudo: String = "",
     var text: String = "",
-    var timestamp: Long = 0L
+    var timestamp: Long = 0L,
+    val likes: Map<String, Boolean> = emptyMap(),
+    val dislikes: Map<String, Boolean> = emptyMap()
 )
 
 // Data class pour un post
