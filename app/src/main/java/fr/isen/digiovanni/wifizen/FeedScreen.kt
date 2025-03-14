@@ -192,23 +192,23 @@ fun FeedScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.Start
                                             ) {
-                                                val currentUid = auth.currentUser?.uid ?: ""
-                                                val userLiked = comment.likes.containsKey(currentUid)
-                                                val userDisliked = comment.dislikes.containsKey(currentUid)
+                                                val commentUid = auth.currentUser?.uid ?: ""
+                                                val isUserLiked = comment.likes.containsKey(commentUid)
+                                                val userDisliked = comment.dislikes.containsKey(commentUid)
 
-                                                val likeCount = comment.likes.size
+                                                val likedCount = comment.likes.size
                                                 val dislikeCount = comment.dislikes.size
 
-                                                // Bouton 👍
+// Bouton 👍
                                                 Button(onClick = {
                                                     val newLikes = comment.likes.toMutableMap()
                                                     val newDislikes = comment.dislikes.toMutableMap()
 
-                                                    if (userLiked) {
-                                                        newLikes.remove(currentUid)  // Annuler le like
+                                                    if (isUserLiked) {
+                                                        newLikes.remove(commentUid)  // Annuler le like
                                                     } else {
-                                                        newLikes[currentUid] = true  // Ajouter le like
-                                                        newDislikes.remove(currentUid)  // Retirer le dislike s'il existe
+                                                        newLikes[commentUid] = true  // Ajouter le like
+                                                        newDislikes.remove(commentUid)  // Retirer le dislike s'il existe
                                                     }
 
                                                     // Met à jour la base de données
@@ -220,21 +220,19 @@ fun FeedScreen(
                                                             "dislikes" to newDislikes
                                                         ))
                                                 }) {
-                                                    Text(if (userLiked) "👍 $likeCount" else "👍 $likeCount")
+                                                    Text(if (isUserLiked) "👍 $likedCount" else "👍 $likedCount")
                                                 }
 
-                                                Spacer(modifier = Modifier.width(8.dp))
-
-                                                // Bouton 👎
+// Bouton 👎
                                                 Button(onClick = {
                                                     val newLikes = comment.likes.toMutableMap()
                                                     val newDislikes = comment.dislikes.toMutableMap()
 
                                                     if (userDisliked) {
-                                                        newDislikes.remove(currentUid)  // Annuler le dislike
+                                                        newDislikes.remove(commentUid)  // Annuler le dislike
                                                     } else {
-                                                        newDislikes[currentUid] = true  // Ajouter le dislike
-                                                        newLikes.remove(currentUid)  // Retirer le like s'il existe
+                                                        newDislikes[commentUid] = true  // Ajouter le dislike
+                                                        newLikes.remove(commentUid)  // Retirer le like s'il existe
                                                     }
 
                                                     // Met à jour la base de données
@@ -248,6 +246,10 @@ fun FeedScreen(
                                                 }) {
                                                     Text(if (userDisliked) "👎 $dislikeCount" else "👎 $dislikeCount")
                                                 }
+
+
+                                                Spacer(modifier = Modifier.width(8.dp))
+
                                             }
 
                                             if (comment.uid == auth.currentUser?.uid) {
